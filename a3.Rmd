@@ -1,5 +1,5 @@
 ---
-title: "a3"
+title: "Assignment 3"
 output: html_document
 ---
 
@@ -9,26 +9,93 @@ knitr::opts_chunk$set(echo = TRUE)
 library('pacman')
 pacman::p_load(tidyverse, tidymodels)
 ```
+# Part I - simulating the data
+```{r}
+simulate_data <- function(pop_effects, n = 100, n_trails = 10, individual_sd = 1, trail_sd = 0.5, error = 0.2, seed = 1){
+
+  set.seed(seed)
+    
+  tibble(
+    variable = map_chr(seq_along(pop_effects), ~ paste0('v_', .)), 
+    population_value = pop_effects) %>% 
+  mutate(id = seq(1, n, by = 1) %>% list) %>% 
+    unnest(id) %>% 
+  rowwise %>%
+  mutate(condition = c('sz', 'hc') %>% list,
+         true_effect = rnorm(1, population_value, individual_sd) / 2,
+         true_effect = c(true_effect, - true_effect) %>% list,
+         trail = seq(1, n_trails, by = 1) %>% list) %>% 
+    unnest(c(condition, true_effect)) %>% unnest(trail) %>% 
+  rowwise %>% 
+  mutate(measurment = rnorm(1, true_effect, trail_sd) %>% rnorm(1, ., error),
+         across(c(variable, id, condition), as_factor)) %>% 
+  relocate(c(variable, population_value), .after = condition)
+}
+```
+
 
 ```{r}
-m_a_vals <- c(0.3, 0.4, 0.6, 0.7, 0.65, 0.45, 0.33, 0.23, 0.27, 0.31)
+m_a_values <- c(0.3, 0.4, 0.6, 0.7, 0.65, 0.45, 0.33, 0.23, 0.27, 0.31)
 
-# pop_vals <- f(m_a_values, 6) %>% append(4, 0)
-  # something to draw random 6 without repetiotion from the set above
-
-pop_vals <- c(0.3, 0.4, 0.6, 0.7, 0.65, 0.45, 0, 0, 0, 0)
-vars <- map_chr(.x = seq(1,10, by = 1), ~ paste0('v_', .x))
+set.seed(1)
+informed_pop_effects <- c(sample(m_a_values, 6, replace = F), rep(0, 4))
 
 
-
-
-data_all <- tibble(variable = vars, population_value = pop_vals) %>% 
-  mutate(pair_id = seq(1,100, by = 1) %>% list) %>% unnest(pair_id) %>% 
-  rowwise %>% 
-  mutate(pair_effect = rnorm(1, population_value, 1)) %>% 
-  mutate(trail = seq(1,10, by = 1) %>% list) %>% unnest(trail) %>%
-  rowwise %>% 
-  mutate(effect = rnorm(1, pair_effect, 0.6))
-
+skeptic_pop_effects <- rep(0, 10)
 ```
+
+
+```{r}
+dfs_long <- map(list(informed_pop_effects, skeptic_pop_effects), simulate_data)
+
+names(dfs_long) <- c('informed', 'skeptic')
+
+head(dfs_long[[1]])
+head(dfs_long[[2]])
+```
+
+```{r}
+dfs_wide <- map(dfs_long,
+  ~ .x %>% 
+      pivot_wider(id_cols = c(id, trail, condition),
+                  names_from = variable,
+                  values_from = measurment)
+)
+head(dfs_wide[[1]])
+head(dfs_wide[[2]])
+```
+# Part II - machine learning pipeline on simulated data
+
+On the two simulated datasets (separately) build a machine learning pipeline: i) create a data budget (e.g. balanced training and test sets); ii) pre-process the data (e.g. scaling the features); iii) fit and assess a classification algorithm on the training data (e.g. Bayesian multilevel logistic regression); iv) assess performance on the test set; v) discuss whether performance is as expected and feature importance is as expected.
+
+Bonus question: replace the bayesian multilevel regression with a different algorithm, e.g. SVM or random forest (but really, anything you'd like to try).
+
+
+1) budget
+2) pre-process(center, scale, etc.)
+3) fit the model
+4) access performance
+5) conclusions: is performance as expected, is feature importance as expected
+
+```{r}
+splits <- map(dfs_wide, ~ .x %>% initial_split(prop = 4/5))
+  
+dfs_training <- map(splits, ~ .x %>% training)
+dfs_testing <- map(splits, ~ .x %>% testing)
+
+rm(splits)
+```
+```{r}
+recipe <- 
+  recipe(condition ~ ., data = .x) %>% 
+  update_role(id, trail, new_role = 'id') %>% 
+  step_normalize(all_predictors) %>% 
+  step_corr()
+  
+model <-   
+linear_reg() %>% 
+  set_engine("stan_glmer") %>% 
+  fit(depr_score ~ week + (1|subject), data = riesby)
+```
+
 
