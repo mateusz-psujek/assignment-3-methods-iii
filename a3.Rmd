@@ -7,9 +7,24 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 
 library('pacman')
-pacman::p_load(tidyverse, tidymodels)
+pacman::p_load(tidyverse, tidymodels, multilevelmod, rstanarm, tidybayes, broom.mixed)
 ```
+
+```{r}
+#to_do:
+#   - (optional) play around with the autoscale in rstanarm (sets the ratio of sd(y) to sd(x) to be constant)
+#   - set the priors!
+#   - figure out gather_draws and tidy_draws alternatives for this thing
+#   - lasso precedure to reduce the number of predictors (part III i guess)
+#   - (optional) you could play around with the hierarchical shrinkage family ("hc")("horseshoe prior") - link: https://mc-stan.org/rstanarm/reference/priors.html
+
+#   - 
+```
+
 # Part I - simulating the data
+
+Use the meta-analysis reported in Parola et al (2020), create a simulated dataset with 100 matched pairs of schizophrenia and controls, each participant producing 10 repeated measures (10 trials with their speech recorded). for each of these "recordings" (data points) produce 10 acoustic measures: 6 from the meta-analysis, 4 with just random noise. Do the same for a baseline dataset including only 10 noise variables. Tip: see the slides for the code.
+
 ```{r}
 simulate_data <- function(pop_effects, n = 100, n_trails = 10, individual_sd = 1, trail_sd = 0.5, error = 0.2, seed = 1){
 
@@ -71,12 +86,25 @@ On the two simulated datasets (separately) build a machine learning pipeline: i)
 Bonus question: replace the bayesian multilevel regression with a different algorithm, e.g. SVM or random forest (but really, anything you'd like to try).
 
 
-1) budget
-2) pre-process(center, scale, etc.)
-3) fit the model
+1) (done) budget
+
+2) (done*) pre-process(center, scale, etc.)
+      - you can probably add some more steps
+      
+3) (done*) fit the model
+      - you probably should visualise the predictive prior distributions (look up the lecture)
+      - do convergance checks
+      
 4) access performance
+      1. looic
+      2. folds
+      3. tests
+      4. graphs comparing informed and sceptic
+      
 5) conclusions: is performance as expected, is feature importance as expected
 
+
+## Budgeting the data:
 ```{r}
 splits <- map(dfs_wide, ~ .x %>% initial_split(prop = 4/5))
   
@@ -86,16 +114,142 @@ dfs_testing <- map(splits, ~ .x %>% testing)
 rm(splits)
 ```
 ```{r}
-recipe <- 
-  recipe(condition ~ ., data = .x) %>% 
-  update_role(id, trail, new_role = 'id') %>% 
-  step_normalize(all_predictors) %>% 
-  step_corr()
+prior_b <- normal(location = c(rep(0, 10)), scale = c(rep(0.3, 10)))
+prior_intercept <- normal(0, 1)
+
+
+prior_model <- logistic_reg() %>% 
+  set_engine('stan',
+             prior = prior_b,
+             prior_intercept = prior_intercept,
+             prior_PD = T,
+             cores = 3)
   
-model <-   
-linear_reg() %>% 
-  set_engine("stan_glmer") %>% 
-  fit(depr_score ~ week + (1|subject), data = riesby)
+  
+model <- logistic_reg() %>% 
+  set_engine('stan',
+             prior = prior_b,
+             prior_intercept = prior_intercept,
+             cores = 3)
+#priors!!!
+```
+
+## Preprocessing the data
+```{r}
+train <- function(data, model){
+  
+  recipe <- recipe(condition ~ 1 + ., data = data) %>%
+    update_role(id, trail, new_role = 'id') %>%
+    step_normalize(all_numeric())
+                 
+  wflow <- workflow() %>% 
+    add_model(model) %>%  
+    add_recipe(recipe)
+  
+  return(wflow %>% fit(data = data))
+}
+
+```
+
+## Fitting (training) the models
+```{r}
+priors <- map(dfs_training, ~ train(data = .x, model = prior_model))
+
+trained <- map(dfs_training, ~ train(data = .x, model = model))
+```
+```{r}
+prior_models <- map(priors, extract_fit_engine)
+trained_models <- map(trained, extract_fit_engine)
+```
+
+
+```{r}
+
+pp_update_plot <- function(prior_model, posterior_model){
+  df_draws <- 
+    bind_rows(
+      bind_rows(
+        prior_model %>% gather_draws(`(Intercept)`),
+        prior_model %>% gather_draws(`v_.*`, regex = T)
+        ) %>% 
+        mutate(type = 'prior'),
+      
+      bind_rows(
+        posterior_model %>% gather_draws(`(Intercept)`),
+        posterior_model %>% gather_draws(`v_.*`, regex = T)
+        ) %>% 
+        mutate(type = 'posterior')
+      )
+  
+  df_draws <- df_draws %>% 
+    group_by(.variable) %>% 
+    mutate(upp_lim = if_else((max(.value) + min(.value)) > 0, max(.value), - min(.value)),
+           low_lim = - upp_lim) %>% 
+    ungroup
+  
+  
+  
+  df_draws %>%  
+    ggplot(aes(x = .value, fill = type)) +
+      geom_density(alpha = 0.8) +
+      labs(title = 
+           fill = element_blank()) +
+      xlim(df_draws$low_lim[[1]], df_draws$upp_lim[[1]]) +
+      facet_grid(vars(df_draws$.variable)) +
+      theme_minimal() +
+      theme(axis.ticks.y = element_blank(), 
+            axis.text.y = element_blank())
+}
+
+```
+```{r fig.height = 8}
+
+pmap(
+  .l = list(.x = prior_models, 
+        .y = trained_models,
+        .n = names(prior_models)),
+  .f =function(.x, .y, .n){
+    pp_update_plot(.x, .y)+
+      ggtitle(.n)}
+)
+```
+## Accessing model performance
+
+### LOOIC #not sure if that's necessary
+
+### Cross-validation
+```{r}
+folds <- vfold_cv(dfs_training, v = 8)
+
+fitted_folds <- map(folds, train)
+```
+
+
+### Test data
+```{r}
+#change this to 'trained' instead of 'posteriors'
+
+predictions <- map2(posteriors, dfs_testing, ~ augment(.x, .y))
+
+x <- posteriors[[1]] %>% extract_workflow_set_result()
+
+predictions[[1]] %>% 
+  ggplot(aes(x = ))
+
+```
+## Conclusions (is performance and feature importance as expected)
+
+```{r}
+
+```
+
+
+
+# Part III
+
+Download the empirical dataset from brightspace and apply your ML pipeline to the new data, adjusting where needed. Warning: in the simulated dataset we only had 10 features, now you have many more! Such is the life of the ML practitioner. Consider the impact a higher number of features will have on your ML inference, and decide whether you need to cut down the number of features before running the pipeline (or alternatively expand the pipeline to add feature selection).
+```{r}
+
 ```
 
 
