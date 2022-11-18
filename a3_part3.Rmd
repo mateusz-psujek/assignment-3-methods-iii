@@ -1,0 +1,14 @@
+---
+title: "a3_part3"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library('pacman')
+pacman::p_load(tidyverse, tidymodels, multilevelmod, rstanarm, tidybayes, broom.mixed)
+```
+# Part III
+
+Download the empirical dataset from brightspace and apply your ML pipeline to the new data, adjusting where needed. Warning: in the simulated dataset we only had 10 features, now you have many more! Such is the life of the ML practitioner. Consider the impact a higher number of features will have on your ML inference, and decide whether you need to cut down the number of features before running the pipeline (or alternatively expand the pipeline to add feature selection).
