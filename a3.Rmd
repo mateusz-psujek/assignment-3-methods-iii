@@ -35,7 +35,6 @@ Remember: plots are very very important to communicate your process and results.
 #   - (optional) try to do the simulation with expand_grid() (seems very very useful)
 #   - (optional) play around with the autoscale in rstanarm (sets the ratio of sd(y) to sd(x) to be constant)
 #   - (optional) you could play around with the hierarchical shrinkage family ("hc")("horseshoe prior") - link: https://mc-stan.org/rstanarm/reference/priors.html
-
 #   - 
 ```
 
