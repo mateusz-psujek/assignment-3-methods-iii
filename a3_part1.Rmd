@@ -38,7 +38,7 @@ simulate_data <- function(pop_effects, n = 100, n_trails = 10, individual_sd = 1
 
 
 ```{r}
-m_a_values <- c(0.3, 0.4, 0.6, 0.7, 0.65, 0.45, 0.33, 0.23, 0.27, 0.31)
+m_a_values <- c(0.253, -0.546, 0.739, -1.26, -0.155, -0.75, 1.891, 0.046)
 
 set.seed(1)
 informed_pop_effects <- c(sample(m_a_values, 6, replace = F), rep(0, 4))

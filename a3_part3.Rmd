@@ -12,3 +12,242 @@ pacman::p_load(tidyverse, tidymodels, multilevelmod, rstanarm, tidybayes, broom.
 # Part III
 
 Download the empirical dataset from brightspace and apply your ML pipeline to the new data, adjusting where needed. Warning: in the simulated dataset we only had 10 features, now you have many more! Such is the life of the ML practitioner. Consider the impact a higher number of features will have on your ML inference, and decide whether you need to cut down the number of features before running the pipeline (or alternatively expand the pipeline to add feature selection).
+
+
+1. Describe and plot the data
+    
+      - NEW: remember about the feedback he gave for assignment ii
+
+2. Repeat of part 2 (the same pipeline, different data)
+      
+        1) budget
+              - **NEW: balance the train and test on demographic data (strata argument)**
+        2) pre-process(center, scale, etc.)
+              - **NEW: feature selection** (as separate point, look below)
+        3) fit the model
+              
+        4) access performance
+              - cross-validation
+              - test set
+              - graphs
+              
+        5) conclusions: 
+          5.1) performance
+          5.2) feature importance
+
+
+3. Feature selection
+    1. Demographic data:
+        - Delete it
+              OR
+        - (optional) make sort of a null model using it and then compare it to the acustic features one
+    2. Acustic features
+        - Just removing less important features
+            - lasso 
+            - removing highly correlated ones
+          
+        - Reducing the dimentionality (PCA or SVD(?))
+        
+        
+        compare lasso, vs corralated vs. pca
+        
+```{r}
+rm(list = setdiff(ls(), lsf.str())) 
+# removing all objects except functions from the global environment
+```
+      
+```{r}
+data_raw <- read_csv('real_data.csv')
+
+glimpse(data_raw)
+```
+
+```{r}
+data <- data_raw %>%
+  rename_with(.cols = everything(), str_to_lower) %>% 
+  rename(id = patid,
+         condition = diagnosis) %>% 
+  mutate(across(where(is.character), str_to_lower),
+         across(1:7, as_factor),
+         condition = if_else(condition == 'ct', 'hc', 'sz') %>% as_factor) %>% 
+  select(-newid)
+
+data$language %>% summary
+data$corpus %>% summary
+
+data <- data %>% 
+  select(-language)
+
+
+head(data)
+```
+## Describing the data
+### Condition
+```{r}
+data %>% 
+  count(condition) %>% 
+  mutate(pct = n / sum(n), pct = pct %>% round(2))
+```
+
+### Gender
+```{r}
+data %>% 
+  count(gender) %>% 
+  mutate(pct = n / sum(n), pct = pct %>% round(2))
+
+# pct should have grouped n in the denominator
+data %>% 
+  count(gender, condition) %>% 
+  group_by(condition) %>% 
+  mutate(pct = n / sum(n), pct = pct %>% round(2))
+```
+```{r}
+data %>% 
+  count(corpus) %>% 
+  mutate(pct = n / sum(n), pct = pct %>% round(2))
+
+
+data %>% 
+  count(condition, corpus) %>% 
+  group_by(condition) %>% 
+  mutate(phat = n / sum(n), phat = phat %>% round(2))
+```
+
+## Modeling the data
+### Budgeting
+```{r}
+data_background <- data %>% select(1:5)
+data <- data %>% select(-c(gender, corpus))
+
+split <- initial_split(data, prop = 4/5)
+
+data_training <- training(split)
+data_testing <- testing(split)
+
+rm(split)
+```
+## Preprocessing the data
+```{r}
+recipes <- list()
+
+recipes[[1]] <- recipe(condition ~ 1 + ., data = data_training) %>%
+                    update_role(id, trial, new_role = 'id') %>%
+                    step_normalize(all_numeric())
+
+
+recipes[[2]] <- recipes[[1]] %>% step_corr(all_predictors())
+recipes[[3]] <- recipes[[1]] %>% step_pca(all_predictors())
+
+names(recipes) <- c('lasso', 'corr', 'pca')
+
+
+# Right now you need to do this only with corr and pca 
+recipes <- recipes[2:3]
+```
+### Creating the models
+```{r}
+prior_b <- normal(location = 0, scale = 0.3)
+prior_intercept <- normal(0, 1)
+
+
+model_prior <- logistic_reg() %>% 
+  set_engine('stan',
+             prior = prior_b,
+             prior_intercept = prior_intercept,
+             prior_PD = T,
+             cores = 3)
+  
+  
+model <- logistic_reg() %>% 
+  set_engine('stan',
+             prior = prior_b,
+             prior_intercept = prior_intercept,
+             cores = 3)
+
+model_lasso <- logistic_reg(penalty = 0.01, mixture = 1) %>% 
+    set_engine('stan',
+             prior = prior_b,
+             prior_intercept = prior_intercept,
+             cores = 3)
+
+```
+### Workflows
+```{r}
+wflows <- map(recipes,
+               ~ workflow() %>% 
+                  add_model(model) %>% 
+                  add_recipe(.x))
+
+wflows[[1]] <- workflow() %>% 
+    add_model(model_lasso) %>% 
+    add_recipe(recipes[[1]])
+```
+### Fitting the models
+```{r}
+fitted <- map(lr_wflows,
+                 ~ .x %>% fit(data_training))
+
+fitted_models <- map(fitted, extract_fit_engine)
+
+prior_fitted <- workflow() %>%
+                  add_model(mod_lr_prior) %>%
+                  add_recipe(recipes[[1]]) %>% 
+                  fit(data_training) %>% 
+                  extract_fit_engine()
+# the prior model is the same no matter the pre-processing
+```
+
+```{r}
+a <- get_variables(fitted_models[[1]])
+b <- get_variables(fitted_models[[2]])
+c <- get_variables(fitted_models[[3]])
+#it seems there is something wrong with these they all have the same number of factors
+```
+
+
+```{r}
+a
+b
+c
+```
+
+
+### Convergance checks
+
+
+```{r}
+plot(fitted_models[[1]], 'neff')
+```
+
+```{r}
+
+convergance_plots <- map2(
+  fitted_models, 
+  names(fitted_models), 
+  function(.x, .y){
+    list(
+      plot(.x, 'trace', pars = '(Intercept)'),
+      plot(.x, 'neff'),
+      plot(.x, 'rhat')
+      ) %>%
+    map(function(.x){.x + ggtitle(.y)})
+  }
+)
+
+convergance_plots %>% print
+
+rm(convergance_plots)
+
+```
+
+```{r}
+test_preds <- map(fitted, ~ augment(.x, data_training))
+
+what <- roc_auc(test_preds[[1]], condition, .pred_hc)
+
+
+fitted_models[[1]]
+
+
+```
+

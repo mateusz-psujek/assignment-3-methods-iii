@@ -123,7 +123,23 @@ rm(prior_wflows)
 ```
 ### Convergance checks
 ```{r}
-plot(fitted_models[[1]])
+
+convergance_plots <- map2(
+  fitted_models, 
+  names(fitted_models), 
+  function(.x, .y){
+    list(
+      plot(.x, 'trace'),
+      plot(.x, 'neff'),
+      plot(.x, 'rhat')
+      ) %>%
+    map(function(.x){.x + ggtitle(.y)})
+  }
+)
+
+convergance_plots %>% print
+
+rm(convergance_plots)
 ```
 ### Checking the priors
 #### Visualising the prior distributions
@@ -391,4 +407,3 @@ performance_data %>%
 ```{r}
 
 ```
-
