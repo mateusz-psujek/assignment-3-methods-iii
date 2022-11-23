@@ -143,6 +143,7 @@ names(recipes) <- c('lasso', 'corr', 'pca')
 
 # Right now you need to do this only with corr and pca 
 recipes <- recipes[2:3]
+#remove this later
 ```
 ### Creating the models
 ```{r}
@@ -177,10 +178,11 @@ wflows <- map(recipes,
                ~ workflow() %>% 
                   add_model(model) %>% 
                   add_recipe(.x))
+#un # this after you decide what to do about the lasso regression
 
-wflows[[1]] <- workflow() %>% 
-    add_model(model_lasso) %>% 
-    add_recipe(recipes[[1]])
+#wflows[[1]] <- workflow() %>% 
+ #   add_model(model_lasso) %>% 
+  #  add_recipe(recipes[[1]])
 ```
 ### Fitting the models
 ```{r}
@@ -200,25 +202,18 @@ prior_fitted <- workflow() %>%
 ```{r}
 a <- get_variables(fitted_models[[1]])
 b <- get_variables(fitted_models[[2]])
-c <- get_variables(fitted_models[[3]])
-#it seems there is something wrong with these they all have the same number of factors
+
+#c <- get_variables(fitted_models[[3]])
 ```
 
 
 ```{r}
 a
 b
-c
 ```
 
 
 ### Convergance checks
-
-
-```{r}
-plot(fitted_models[[1]], 'neff')
-```
-
 ```{r}
 
 convergance_plots <- map2(
@@ -244,10 +239,8 @@ rm(convergance_plots)
 test_preds <- map(fitted, ~ augment(.x, data_training))
 
 what <- roc_auc(test_preds[[1]], condition, .pred_hc)
-
-
-fitted_models[[1]]
-
+```
+```{r}
 
 ```
 

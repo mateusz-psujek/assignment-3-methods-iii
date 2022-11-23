@@ -84,7 +84,8 @@ map(dfs_long,
     ~ .x %>% 
       ggplot(aes(x = measurment, fill = condition)) +
         geom_density()+
-        facet_wrap(vars(variable))
+        facet_wrap(vars(variable)) +
+        theme_minimal()
 )
 ```
 

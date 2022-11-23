@@ -401,7 +401,7 @@ performance_data %>%
 
 ```
 ```{r}
-
+save.image(file = "C:/Users/PSUJ/Desktop/uni/methods iii/rdata/a3_part2.Rdata")
 ```
 
 ```{r}
