@@ -110,7 +110,7 @@ data %>%
 data %>% 
   count(condition, corpus) %>% 
   group_by(condition) %>% 
-  mutate(phat = n / sum(n), phat = phat %>% round(2))
+  mutate(pct = n / sum(n), pct = pct %>% round(2))
 ```
 
 ## Modeling the data
@@ -186,102 +186,22 @@ wflows <- map(recipes,
 ```
 ### Fitting the models
 ```{r}
+set.seed(1)
 fitted <- map(wflows,
               ~ .x %>% fit(data_training))
 
 fitted_models <- map(fitted, extract_fit_engine)
 
-prior_fitted <- workflow() %>%
-                  add_model(model_prior) %>%
-                  add_recipe(recipes[[1]]) %>% 
-                  fit(data_training) %>% 
-                  extract_fit_engine()
-# the prior model is the same no matter the pre-processing
-```
-
-```{r}
-a <- get_variables(fitted_models[[1]]) %>% as_data_frame
-a <- a %>% as_data_frame()
-```
-
-```{r}
-
-variables <- get_variables(fitted_models[[1]]) %>%
-    str_subset('.*__', negate = T) %>%
-      #removing all the 'technical' variables (e.g. 'treedepth__', 'stepsize__')
-    str_subset('(Intercept)', negate = T) 
-
-variables <- c(
-  '(Intercept)',
-  variables %>% str_subset('mcep.*') %>% sample(3, replace = F),
-  variables %>% str_subset('hmpdm.*') %>% sample(3, replace = F),
-  variables %>% str_subset(.,'mcep.*|hmpd.*', negate = T) %>% sample(3, replace = F)
+set.seed(1)
+prior_fitted <- map(recipes,
+  ~ workflow() %>%
+     add_model(model_prior) %>%
+     add_recipe(.x) %>% 
+     fit(data_training) %>% 
+     extract_fit_engine()
 )
 
-x <- fitted_models[[1]] %>% gather_draws(!!!syms(variables))
-
-x <- fitted_models[[1]] %>% draws
-x <- fitted_models[[1]] %>% gather_draws(variables %>% unlist)
 ```
-
-
-```{r}
-pp_update_plot <- function(prior_model, posterior_model, variables){
-  df_draws <- 
-    bind_rows(
-      bind_rows(
-        prior_model %>% gather_draws(`(Intercept)`),
-        prior_model %>% gather_draws(`v_.*`, regex = T)
-        ) %>% 
-        mutate(type = 'prior'),
-      
-      bind_rows(
-        posterior_model %>% gather_draws(`(Intercept)`),
-        posterior_model %>% gather_draws(`v_.*`, regex = T)
-        ) %>% 
-        mutate(type = 'posterior')
-      )
-  
-  df_draws <- df_draws %>% 
-    group_by(.variable) %>% 
-    mutate(upp_lim = if_else((max(.value) + min(.value)) > 0, max(.value), - min(.value)),
-           low_lim = - upp_lim) %>% 
-    ungroup
-  
-  
-  
-  df_draws %>%  
-    ggplot(aes(x = .value, fill = type)) +
-      geom_density(alpha = 0.8) +
-      labs(fill = element_blank()) +
-      xlim(df_draws$low_lim[[1]], df_draws$upp_lim[[1]]) +
-      facet_grid(vars(df_draws$.variable)) +
-      theme_minimal() +
-      theme(axis.ticks.y = element_blank(), 
-            axis.text.y = element_blank())
-}
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ### Convergance checks
 ```{r}
 
@@ -304,6 +224,66 @@ convergance_plots %>% print
 rm(convergance_plots)
 
 ```
+
+```{r}
+
+variables_corr <- get_variables(fitted_models[[1]]) %>%
+    str_subset('.*__', negate = T) %>%
+      #removing all the 'technical' variables (e.g. 'treedepth__', 'stepsize__')
+    str_subset('(Intercept)', negate = T) 
+
+variables_corr <- c(
+  '(Intercept)',
+  variables_corr %>% str_subset('mcep.*') %>% sample(3, replace = F),
+  variables_corr %>% str_subset('hmpdm.*') %>% sample(3, replace = F),
+  variables_corr %>% str_subset(.,'mcep.*|hmpd.*', negate = T) %>% sample(3, replace = F)
+)
+
+
+
+
+variables_pca <- get_variables(fitted_models[[2]]) %>% str_subset('.*__', negate = T)
+```
+
+
+```{r}
+pp_update_plot <- function(prior_model, posterior_model, variables){
+  
+  df_draws <-  bind_rows(
+    prior_model %>% gather_draws(!!!syms(variables))%>% 
+        mutate(type = 'prior'),
+      
+      posterior_model %>% gather_draws(!!!syms(variables))%>% 
+        mutate(type = 'posterior')
+      )
+  
+  df_draws <- df_draws %>% 
+    group_by(.variable) %>% 
+    mutate(upp_lim = if_else((max(.value) + min(.value)) > 0, max(.value), - min(.value)),
+           low_lim = - upp_lim) %>% 
+    ungroup
+  
+  
+  
+  df_draws %>%  
+    ggplot(aes(x = .value, fill = type)) +
+      geom_density(alpha = 0.7) +
+      labs(fill = element_blank()) +
+      xlim(df_draws$low_lim[[1]], df_draws$upp_lim[[1]]) +
+      facet_grid(vars(df_draws$.variable)) +
+      theme_minimal() +
+      theme(axis.ticks.y = element_blank(), 
+            axis.text.y = element_blank())
+}
+```
+```{r fig.height=8}
+pp_update_plot(prior_fitted[[1]], fitted_models[[1]], variables_corr)
+
+pp_update_plot(prior_fitted[[2]], fitted_models[[2]], variables_pca)
+
+# they look quite weird, check whether the values of the priors and posteriors much the priors you set and the models estimates (or check by running brms) :c
+```
+
 
 ```{r}
 test_preds <- map(fitted, ~ augment(.x, data_training))
