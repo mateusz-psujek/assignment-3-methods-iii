@@ -7,7 +7,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 
 library('pacman')
-pacman::p_load(tidyverse, tidymodels, multilevelmod, rstanarm, tidybayes, broom.mixed, conflicted)
+pacman::p_load(tidyverse, tidymodels, multilevelmod, rstanarm, tidybayes, broom.mixed, conflicted, DALEX, DALEXtra, vip)
 
 
 conflict_scout()
@@ -47,6 +47,10 @@ Bonus question: replace the bayesian multilevel regression with a different algo
 
 ## Budgeting the data:
 ```{r}
+
+# We know that using map() for a list of 2 elements might probably be considered an overkill, but we thought it would make the code easier to read and easier modify so we can reuse it in part 3. Also, we tried to see the assignment as a learning experience, and learning to use functional programming on lists of data frames seems like something useful.
+
+
 splits <- map(dfs_wide, ~ .x %>% initial_split(prop = 4/5))
   
 dfs_training <- map(splits, ~ .x %>% training)
@@ -289,9 +293,6 @@ test_results_mean_only %>%
     theme_minimal()
 
 ```
-
-
-
 ```{r}
 #with the uncertanity 
 
@@ -400,10 +401,64 @@ performance_data %>%
       facet_wrap(vars(metric))
 
 ```
+## Feature importance
+```{r}
+vip_simulated <- function(model, truth){
+vim_df <- model %>% gather_draws(`v_.*`, regex = T)
+vim_df <- map2_df(vim_df %>% group_split(.variable), truth,
+                  ~ .x %>% mutate(truth = .y)
+                  )
+
+vim_df %>% 
+ggplot(aes(x = .value)) +
+  geom_density() +
+  geom_vline(aes(xintercept = truth[[1]]), color = 'darkred', linetype = 'dashed', alpha = 0.8) +
+  facet_wrap(vars(.variable), nrow = , scales = 'free_x') +
+  theme_minimal()
+}
+
+vip_simulated(fitted_models[[1]], informed_pop_effects) + ggtitle('Informed')
+vip_simulated(fitted_models[[2]], skeptic_pop_effects) + ggtitle('Skeptic')
+
+#how to make v_10 appear as last? (mutating to factor before ggplot and inside facet_wrap doesn't work)
+
+```
+
+
+```{r}
+vips <- map(
+  c(1,2),
+  ~ explain_tidymodels(
+      fitted[[.x]] %>% extract_fit_parsnip,
+      data = dfs_training[[.x]],
+      y = dfs_training[[.x]]$condition %>% as.numeric - 1,
+      label = names(fitted)[[.x]]
+      )
+)
+
+map(
+  vips, 
+  ~ .x %>% 
+    model_parts %>% 
+    plot(show_boxplots = F) +
+      labs(title = 'Feature importance',
+         subtitle = NULL)
+)
+
+map(
+  vips, 
+  ~ .x %>% 
+    model_profile(
+      type = 'partial',
+      variables = paste0('v_', seq(10))
+      ) %>% 
+    plot() +
+      labs(title = 'Partial dependence profile')
+)
+```
+
+
 ```{r}
 save.image(file = "C:/Users/PSUJ/Desktop/uni/methods iii/rdata/a3_part2.Rdata")
 ```
 
-```{r}
-
-```

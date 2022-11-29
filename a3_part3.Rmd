@@ -288,9 +288,83 @@ pp_update_plot(prior_fitted[[2]], fitted_models[[2]], variables_pca)
 ```{r}
 test_preds <- map(fitted, ~ augment(.x, data_training))
 
-what <- roc_auc(test_preds[[1]], condition, .pred_hc)
+map2(test_preds, names(test_preds),
+     ~ .x %>% 
+          roc_curve(truth = condition, .pred_hc) %>% 
+            autoplot + 
+            ggtitle(.y)
+)
+
+
+#why this one and part 2 calculate the probability for different classes??? part 2 (for sz and this one for hc)
 ```
 ```{r}
+#with the uncertanity 
 
+test_results <- tibble(draw = NULL,
+                       accuracy = NULL,
+                       model = NULL)
+
+
+for (i in seq_along(fitted_models)){
+  
+  m <- fitted_models[[i]]
+  name <- names(fitted_models)[[i]]
+  
+  draws_matrix <- posterior_epred(m)
+  
+  roc_aucs <- map_dbl(
+    draws_matrix %>% split(row(draws_matrix)),
+    ~ roc_auc_vec(truth = data_training$condition, estimate = .x)
+    )
+  roc_aucs <- tibble(
+    value = roc_aucs,
+    metric = 'roc_auc',
+    draw = seq_along(nrow)
+    )
+  
+  
+  preds_class <- map(
+    draws_matrix %>% split(row(draws_matrix)), 
+    ~ if_else(.x > 0.5, 'hc', 'sz') %>% as_factor %>% relevel('hc')
+    )
+  
+       
+  accuracies <- map_dbl(
+    preds_class,
+    ~ accuracy_vec(truth = data_training$condition, estimate = .x)
+    )
+  accuracies <- tibble(
+    value = accuracies,
+    metric = 'accuracy',
+    draw = seq_along(nrow)
+    )
+
+  
+  test_results <- bind_rows(
+    test_results,
+    bind_rows(accuracies, roc_aucs) %>% mutate(model = name)
+  )
+}
+rm(i, m, name, draws_matrix, roc_aucs, preds_class, accuracies)
+
+
+test_results <- test_results %>%
+  mutate(value = if_else(metric == 'roc_auc', 1 - value, value))
+
+test_results_summary <- test_results %>% 
+  group_by(model, metric) %>% 
+  summarise(mean = mean(value), std_err = sd(value),
+            #because we're dealing the the estimates of the population parameters, the sd already is the standard error (or at least so my limited understanding goes)
+            lower = mean - 1.96*std_err, 
+            upper = mean + 1.96*std_err)
+
+test_results %>%
+    ggplot(aes(x = model, y = value, colour = model)) +
+      geom_point(alpha = 0.7) +
+      geom_hline(yintercept = 0.5, color = 'darkred', linetype = 'dashed', alpha = 0.7) +
+      theme_minimal() +
+      facet_wrap(vars(metric))
+#the 'hc' and 'sz' seem to be flipped around
 ```
 
