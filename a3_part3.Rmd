@@ -69,7 +69,7 @@ data <- data_raw %>%
          condition = diagnosis) %>% 
   mutate(across(where(is.character), str_to_lower),
          across(1:7, as_factor),
-         condition = if_else(condition != 'ct', 'sz', 'hc') %>% as_factor) %>% 
+         condition = if_else(condition != 'ct', 'sz', 'hc') %>% as_factor %>% relevel('sz')) %>% 
   select(-newid)
 
 data$language %>% summary
@@ -137,6 +137,7 @@ recipes[[1]] <- recipe(condition ~ 1 + ., data = data_training) %>%
 
 recipes[[2]] <- recipes[[1]] %>% step_corr(all_predictors())
 recipes[[3]] <- recipes[[1]] %>% step_pca(all_predictors())
+recipes[[4]] <- recipes[[1]] %>% step_umap
 
 names(recipes) <- c('lasso', 'corr', 'pca')
 
@@ -290,7 +291,7 @@ test_preds <- map(fitted, ~ augment(.x, data_training))
 
 map2(test_preds, names(test_preds),
      ~ .x %>% 
-          roc_curve(truth = condition, .pred_hc) %>% 
+          roc_curve(truth = condition, .pred_sz) %>% 
             autoplot + 
             ggtitle(.y)
 )
@@ -302,7 +303,7 @@ map2(test_preds, names(test_preds),
 #with the uncertanity 
 
 test_results <- tibble(draw = NULL,
-                       accuracy = NULL,
+                       f1 = NULL,
                        model = NULL)
 
 
@@ -330,23 +331,23 @@ for (i in seq_along(fitted_models)){
     )
   
        
-  accuracies <- map_dbl(
+  fs <- map_dbl(
     preds_class,
-    ~ accuracy_vec(truth = data_training$condition, estimate = .x)
+    ~ f_meas_vec(truth = data_training$condition, estimate = .x)
     )
-  accuracies <- tibble(
-    value = accuracies,
-    metric = 'accuracy',
+  fs <- tibble(
+    value = fs,
+    metric = 'f1',
     draw = seq_along(nrow)
     )
 
   
   test_results <- bind_rows(
     test_results,
-    bind_rows(accuracies, roc_aucs) %>% mutate(model = name)
+    bind_rows(fs, roc_aucs) %>% mutate(model = name)
   )
 }
-rm(i, m, name, draws_matrix, roc_aucs, preds_class, accuracies)
+rm(i, m, name, draws_matrix, roc_aucs, preds_class, fs)
 
 
 test_results <- test_results %>%

@@ -216,7 +216,7 @@ dfs_folded <- map(dfs_training, ~ vfold_cv(.x, v = 8))
 
 
 
-cv_data <- map2(wflows, dfs_folded, ~ fit_resamples(.x, .y))
+cv_data <- map2(wflows, dfs_folded, ~ fit_resamples(.x, .y, metrics = metric_set(f_meas, roc_auc)))
 
 cv_results <- map(cv_data, ~ collect_metrics(.x) %>% 
                     mutate(upper = mean + std_err,
@@ -228,7 +228,8 @@ cv_results <- bind_rows(
   )
 
 cv_results <- cv_results %>% 
-  rename_with(.cols = everything(), ~ str_remove(.x, stringr::fixed(".")))
+  rename_with(.cols = everything(), ~ str_remove(.x, stringr::fixed("."))) %>% 
+  mutate(metric = if_else(metric == 'f_meas', 'f1', metric))
 ```
 
 
@@ -267,7 +268,7 @@ map2(test_preds, names(test_preds),
 test_results_mean_only <- map2_df(test_preds, names(test_preds),
              ~ bind_rows(
                   .x %>% roc_auc(truth = condition, .pred_sz),
-                  .x %>% accuracy(truth = condition, .pred_class)
+                  .x %>% f_meas(truth = condition, .pred_class, beta = 1) %>% mutate(.metric = 'f1')
              ) %>% 
                mutate(Model = .y)
 )
@@ -289,7 +290,7 @@ test_results_mean_only %>%
 #with the uncertanity 
 
 test_results <- tibble(draw = NULL,
-                       accuracy = NULL,
+                       f1 = NULL,
                        model = NULL)
 
 
@@ -318,24 +319,24 @@ for (i in seq_along(fitted_models)){
     )
   
        
-  accuracies <- map_dbl(
+  fs <- map_dbl(
     preds_class,
-    ~ accuracy_vec(truth = dfs_training[[1]]$condition, estimate = .x)
+    ~ f_meas_vec(truth = dfs_training[[1]]$condition, estimate = .x, beta = 1)
     )
   
-  accuracies <- tibble(
-    value = accuracies,
-    metric = 'accuracy',
+  fs <- tibble(
+    value = fs,
+    metric = 'f1',
     draw = seq_along(nrow)
     )
 
   
   test_results <- bind_rows(
     test_results,
-    bind_rows(accuracies, roc_aucs) %>% mutate(model = name)
+    bind_rows(fs, roc_aucs) %>% mutate(model = name)
   )
 }
-rm(i, m, name, draws_matrix, roc_aucs, preds_class, accuracies)
+rm(i, m, name, draws_matrix, roc_aucs, preds_class, fs)
 
 
 test_results <- test_results %>%
@@ -389,7 +390,7 @@ performance_data %>%
     ggplot(aes(x = mean, y = model, xmin = lower, xmax = upper, colour = type)) +
       geom_pointrange(position = position_dodge(width = 0.5)) +
       geom_vline(aes(xintercept = 0.5), color = 'darkred', linetype = 'dashed', alpha = 0.7) +
-      labs(y = 'Accuracy') +
+      labs(y = 'F1') +
       theme_minimal()+
       coord_flip() +
       facet_wrap(vars(metric))
@@ -453,6 +454,6 @@ map(
 
 
 ```{r}
-save.image(file = "C:/Users/PSUJ/Desktop/uni/methods iii/rdata/a3_part2.Rdata")
+save.image(file = "C:/Users/PSUJ/Desktop/uni/methods iii/assignment-3-methods-iii/rdata/a3_part2.Rdata")
 ```
 
