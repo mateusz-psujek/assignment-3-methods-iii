@@ -1,13 +1,21 @@
 ---
 title: "Assignment 3"
-output: html_document
+author: "study group no 8"
+date: "23/11/2022"
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
-library('pacman')
+#install.packages(pacman)
+library(pacman)
 pacman::p_load(tidyverse, tidymodels, multilevelmod, rstanarm, tidybayes, broom.mixed, tidytext, conflicted, DALEX, DALEXtra)
+
+conflict_scout() #checking any possible conflicts between packages
+conflict_prefer('filter', 'dplyr') #choosing the packages to prefer if conflict arises
 ```
 # Part I - simulating the data
 
@@ -101,27 +109,6 @@ head(dfs_wide[[2]])
 ```{r}
 
 ```
----
-title: "a3_part1 and 2"
-output: html_document
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-
-library('pacman')
-pacman::p_load(tidyverse, tidymodels, multilevelmod, rstanarm, tidybayes, broom.mixed, conflicted, DALEX, DALEXtra, vip)
-
-
-conflict_scout()
-
-conflict_prefer('filter', 'dplyr')
-conflict_prefer('lag', 'dplyr')
-
-```
-
-
-
 # Part II - machine learning pipeline on simulated data
 
 On the two simulated datasets (separately) build a machine learning pipeline: i) create a data budget (e.g. balanced training and test sets); ii) pre-process the data (e.g. scaling the features); iii) fit and assess a classification algorithm on the training data (e.g. Bayesian multilevel logistic regression); iv) assess performance on the test set; v) discuss whether performance is as expected and feature importance is as expected.
@@ -537,17 +524,6 @@ map(
 
 ```{r}
 save.image(file = "/rdata/a3_part2.Rdata")
-```
----
-title: "a3_part3"
-output: html_document
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-
-library('pacman')
-pacman::p_load(tidyverse, tidymodels, multilevelmod, rstanarm, tidybayes, broom.mixed, tidytext)
 ```
 # Part III
 
