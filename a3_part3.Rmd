@@ -7,7 +7,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 
 library('pacman')
-pacman::p_load(tidyverse, tidymodels, multilevelmod, rstanarm, tidybayes, broom.mixed)
+pacman::p_load(tidyverse, tidymodels, multilevelmod, rstanarm, tidybayes, broom.mixed, tidytext)
 ```
 # Part III
 
@@ -52,7 +52,7 @@ Download the empirical dataset from brightspace and apply your ML pipeline to th
         compare lasso, vs corralated vs. pca
         
 ```{r}
-rm(list = setdiff(ls(), lsf.str())) 
+rm(list = ls()) 
 # removing all objects except functions from the global environment
 ```
       
@@ -225,6 +225,35 @@ convergance_plots %>% print
 rm(convergance_plots)
 
 ```
+```{r}
+#trying to make sense of the PCA
+  # doesn't work yet
+
+x <- recipes[[2]]
+
+x <- prep(x)
+
+y <- fitted[[2]]%>% extract_recipe
+
+tidy_pca <- tidy(fitted[[2]] %>% extract_recipe, 2)
+head(tidy_pca)
+
+tidy_pca %>%
+  group_by(component) %>%
+  top_n(8, abs(value)) %>%
+  ungroup() %>%
+  mutate(terms = reorder_within(terms, abs(value), component)) %>%
+  ggplot(aes(abs(value), terms, fill = value > 0)) +
+  geom_col() +
+  facet_wrap(~component, scales = "free_y") +
+  scale_y_reordered() +
+  labs(
+    x = "Absolute value of contribution",
+    y = NULL, fill = "Positive?"
+  )
+
+
+```
 
 ```{r}
 
@@ -353,20 +382,13 @@ rm(i, m, name, draws_matrix, roc_aucs, preds_class, fs)
 test_results <- test_results %>%
   mutate(value = if_else(metric == 'roc_auc', 1 - value, value))
 
-test_results_summary <- test_results %>% 
-  group_by(model, metric) %>% 
-  summarise(mean = mean(value), std_err = sd(value),
-            #because we're dealing the the estimates of the population parameters, the sd already is the standard error (or at least so my limited understanding goes)
-            lower = mean - 1.96*std_err, 
-            upper = mean + 1.96*std_err)
-
 test_results %>%
     ggplot(aes(x = model, y = value, colour = model)) +
       geom_point(alpha = 0.7) +
       geom_hline(yintercept = 0.5, color = 'darkred', linetype = 'dashed', alpha = 0.7) +
       theme_minimal() +
       facet_wrap(vars(metric))
-#the 'hc' and 'sz' seem to be flipped around
+
 ```
 ```{r}
 
