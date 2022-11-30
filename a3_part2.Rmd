@@ -58,7 +58,6 @@ dfs_testing <- map(splits, ~ .x %>% testing)
 
 rm(splits)
 ```
-
 ## Preprocessing the data
 ```{r}
 recipes <- map(dfs_training, 
@@ -209,14 +208,7 @@ pp_update_plot(prior_models[[2]], fitted_models[[2]])+
 
 ```
 
-
-
-
-
-
 ## Accessing model performance
-
-### LOOIC #not sure if that's necessary
 
 ### Cross-validation
 ```{r}
@@ -312,6 +304,7 @@ for (i in seq_along(fitted_models)){
     draws_matrix %>% split(row(draws_matrix)),
     ~ roc_auc_vec(truth = dfs_training[[1]]$condition, estimate = .x)
     )
+  
   roc_aucs <- tibble(
     value = roc_aucs,
     metric = 'roc_auc',
@@ -321,7 +314,7 @@ for (i in seq_along(fitted_models)){
   
   preds_class <- map(
     draws_matrix %>% split(row(draws_matrix)), 
-    ~ if_else(.x > 0.5, 'hc', 'sz') %>% as_factor %>% relevel('sz')
+    ~ if_else(.x < 0.5, 'sz', 'hc') %>% as_factor %>% relevel('sz')
     )
   
        
@@ -329,6 +322,7 @@ for (i in seq_along(fitted_models)){
     preds_class,
     ~ accuracy_vec(truth = dfs_training[[1]]$condition, estimate = .x)
     )
+  
   accuracies <- tibble(
     value = accuracies,
     metric = 'accuracy',

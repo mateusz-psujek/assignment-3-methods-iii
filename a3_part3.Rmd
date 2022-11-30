@@ -69,7 +69,7 @@ data <- data_raw %>%
          condition = diagnosis) %>% 
   mutate(across(where(is.character), str_to_lower),
          across(1:7, as_factor),
-         condition = if_else(condition == 'ct', 'hc', 'sz') %>% as_factor) %>% 
+         condition = if_else(condition != 'ct', 'sz', 'hc') %>% as_factor) %>% 
   select(-newid)
 
 data$language %>% summary
@@ -326,7 +326,7 @@ for (i in seq_along(fitted_models)){
   
   preds_class <- map(
     draws_matrix %>% split(row(draws_matrix)), 
-    ~ if_else(.x > 0.5, 'hc', 'sz') %>% as_factor %>% relevel('hc')
+    ~ if_else(.x < 0.5, 'sz', 'hc') %>% as_factor %>% relevel('sz')
     )
   
        
@@ -366,5 +366,8 @@ test_results %>%
       theme_minimal() +
       facet_wrap(vars(metric))
 #the 'hc' and 'sz' seem to be flipped around
+```
+```{r}
+
 ```
 
