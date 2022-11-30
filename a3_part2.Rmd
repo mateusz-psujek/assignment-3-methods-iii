@@ -456,4 +456,3 @@ map(
 ```{r}
 save.image(file = "C:/Users/PSUJ/Desktop/uni/methods iii/assignment-3-methods-iii/rdata/a3_part2.Rdata")
 ```
-

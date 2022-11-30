@@ -225,35 +225,28 @@ convergance_plots %>% print
 rm(convergance_plots)
 
 ```
-```{r}
-#trying to make sense of the PCA
-  # doesn't work yet
-
-x <- recipes[[2]]
-
-x <- prep(x)
-
-y <- fitted[[2]]%>% extract_recipe
+```{r fig.width= 12, fig.height = 10}
 
 tidy_pca <- tidy(fitted[[2]] %>% extract_recipe, 2)
-head(tidy_pca)
 
 tidy_pca %>%
+  filter(component %in% paste0('PC', 1:5)) %>% 
   group_by(component) %>%
-  top_n(8, abs(value)) %>%
+  top_n(15, abs(value)) %>%
   ungroup() %>%
   mutate(terms = reorder_within(terms, abs(value), component)) %>%
-  ggplot(aes(abs(value), terms, fill = value > 0)) +
+  ggplot(aes(value, terms)) +
   geom_col() +
-  facet_wrap(~component, scales = "free_y") +
+  facet_wrap(~component, scale = 'free_y') +
   scale_y_reordered() +
-  labs(
-    x = "Absolute value of contribution",
-    y = NULL, fill = "Positive?"
-  )
+  theme_minimal()
 
 
+ggsave('pca_interpretation.png', height = 10, width = 12, bg = 'white')
 ```
+
+
+
 
 ```{r}
 
@@ -268,9 +261,7 @@ variables_corr <- c(
   variables_corr %>% str_subset('hmpdm.*') %>% sample(3, replace = F),
   variables_corr %>% str_subset(.,'mcep.*|hmpd.*', negate = T) %>% sample(3, replace = F)
 )
-
-
-
+#drawing different variables from different types of measures to plot as a sample in the pior-posterior update plots 
 
 variables_pca <- get_variables(fitted_models[[2]]) %>% str_subset('.*__', negate = T)
 ```
@@ -309,7 +300,11 @@ pp_update_plot <- function(prior_model, posterior_model, variables){
 ```{r fig.height=8}
 pp_update_plot(prior_fitted[[1]], fitted_models[[1]], variables_corr)
 
+ggsave('pp_upadte_corr.png', height = 8, bg = 'white')
+
 pp_update_plot(prior_fitted[[2]], fitted_models[[2]], variables_pca)
+
+ggsave('pp_update_pca.png', height = 8, bg = 'white')
 
 # they look quite weird, check whether the values of the priors and posteriors much the priors you set and the models estimates (or check by running brms) :c
 ```
@@ -318,14 +313,14 @@ pp_update_plot(prior_fitted[[2]], fitted_models[[2]], variables_pca)
 ```{r}
 test_preds <- map(fitted, ~ augment(.x, data_training))
 
-map2(test_preds, names(test_preds),
+rocs <- map2(test_preds, names(test_preds),
      ~ .x %>% 
           roc_curve(truth = condition, .pred_sz) %>% 
             autoplot + 
             ggtitle(.y)
 )
-
-
+ggsave(plot = rocs[[1]], filename = 'roc_corr.png')
+ggsave(plot = rocs[[2]], filename =  'roc_pca.png')
 #why this one and part 2 calculate the probability for different classes??? part 2 (for sz and this one for hc)
 ```
 ```{r}
@@ -389,8 +384,8 @@ test_results %>%
       theme_minimal() +
       facet_wrap(vars(metric))
 
+ggsave('test_results.png', bg = 'white')
 ```
 ```{r}
 
 ```
-

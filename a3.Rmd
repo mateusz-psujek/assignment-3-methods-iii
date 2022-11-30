@@ -9,39 +9,9 @@ knitr::opts_chunk$set(echo = TRUE)
 library('pacman')
 pacman::p_load(tidyverse, tidymodels, multilevelmod, rstanarm, tidybayes, broom.mixed)
 ```
-# The report
-The report for the exam, thus, consists of the answer to all the following prompts:
-- Describe your machine learning pipeline. Produce a diagram of it to guide the reader (e.g. see Rybner et al 2022 Vocal markers of autism: Assessing the generalizability of ML models), and describe the different parts: data budgeting, data preprocessing, model choice and training, assessment of performance.
-- Briefly justify and describe your use of simulated data, and results from the pipeline on them.
-- Describe results from applying the ML pipeline to the empirical data and what can we learn from them.
-
-Remember: plots are very very important to communicate your process and results.
-```{r}
-#to_do:
-#   - visualise the model (draw the in logit and original scale)
-#   - check whether the simulation works
-#   - visualise the simulated data
-#   - (*DONE) include uncertanity in your accuracy models(look slides 10)
-#         - *should you add area under the ROC curve (next to accuracy) for the predictive accuracy comparison?
-#   - lasso precedure to reduce the number of predictors (part III i guess)
-#   - think about adding more steps to the preprocessing part
-#   - visualise the priors (look slides 10)
-#   - standardise cross-validation and test performance metrics and graphing (roc curve, roc_auc, accuracy, all (?))
-
-
-
-#OPTIONAL:
-#   - (optional) **just add model type (informed, sceptic) as a column so you don't have to do it every time**
-#   - (optional) try to do the simulation with expand_grid() (seems very very useful)
-#   - (optional) play around with the autoscale in rstanarm (sets the ratio of sd(y) to sd(x) to be constant)
-#   - (optional) you could play around with the hierarchical shrinkage family ("hc")("horseshoe prior") - link: https://mc-stan.org/rstanarm/reference/priors.html
-#   - 
-```
-
 # Part I - simulating the data
 
 Use the meta-analysis reported in Parola et al (2020), create a simulated dataset with 100 matched pairs of schizophrenia and controls, each participant producing 10 repeated measures (10 trials with their speech recorded). for each of these "recordings" (data points) produce 10 acoustic measures: 6 from the meta-analysis, 4 with just random noise. Do the same for a baseline dataset including only 10 noise variables. Tip: see the slides for the code.
-
 ```{r}
 simulate_data <- function(pop_effects, n = 100, n_trails = 10, individual_sd = 1, trail_sd = 0.5, error = 0.2, seed = 1){
 
@@ -67,7 +37,7 @@ simulate_data <- function(pop_effects, n = 100, n_trails = 10, individual_sd = 1
 
 
 ```{r}
-m_a_values <- c(0.3, 0.4, 0.6, 0.7, 0.65, 0.45, 0.33, 0.23, 0.27, 0.31)
+m_a_values <- c(0.253, -0.546, 0.739, -1.26, -0.155, -0.75, 1.891, 0.046)
 
 set.seed(1)
 informed_pop_effects <- c(sample(m_a_values, 6, replace = F), rep(0, 4))
@@ -113,7 +83,8 @@ map(dfs_long,
     ~ .x %>% 
       ggplot(aes(x = measurment, fill = condition)) +
         geom_density()+
-        facet_wrap(vars(variable))
+        facet_wrap(vars(variable)) +
+        theme_minimal()
 )
 ```
 
@@ -127,34 +98,41 @@ dfs_wide <- map(dfs_long,
 head(dfs_wide[[1]])
 head(dfs_wide[[2]])
 ```
+```{r}
+
+```
+---
+title: "a3_part1 and 2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library('pacman')
+pacman::p_load(tidyverse, tidymodels, multilevelmod, rstanarm, tidybayes, broom.mixed, conflicted, DALEX, DALEXtra, vip)
+
+
+conflict_scout()
+
+conflict_prefer('filter', 'dplyr')
+conflict_prefer('lag', 'dplyr')
+
+```
+
+
+
 # Part II - machine learning pipeline on simulated data
 
 On the two simulated datasets (separately) build a machine learning pipeline: i) create a data budget (e.g. balanced training and test sets); ii) pre-process the data (e.g. scaling the features); iii) fit and assess a classification algorithm on the training data (e.g. Bayesian multilevel logistic regression); iv) assess performance on the test set; v) discuss whether performance is as expected and feature importance is as expected.
 
 Bonus question: replace the bayesian multilevel regression with a different algorithm, e.g. SVM or random forest (but really, anything you'd like to try).
-
-
-1) (done) budget
-
-2) (done*) pre-process(center, scale, etc.)
-      - you can probably add some more steps
-      
-3) (done*) fit the model
-      - you probably should visualise the predictive prior distributions (look up the lecture)
-      - do convergance checks
-      
-4) access performance
-      1. looic
-      2. folds
-      3. tests
-      4. graphs comparing informed and sceptic
-      
-5) conclusions: is performance as expected, is feature importance as expected
-  - check out the lecture for what he means here
-
-
 ## Budgeting the data:
 ```{r}
+
+# We know that using map() for a list of 2 elements might probably be considered an overkill, but we thought it would make the code easier to read and easier modify so we can reuse it in part 3. Also, we tried to see the assignment as a learning experience, and learning to use functional programming on lists of data frames seems like something useful.
+
+
 splits <- map(dfs_wide, ~ .x %>% initial_split(prop = 4/5))
   
 dfs_training <- map(splits, ~ .x %>% training)
@@ -162,6 +140,19 @@ dfs_testing <- map(splits, ~ .x %>% testing)
 
 rm(splits)
 ```
+## Preprocessing the data
+```{r}
+recipes <- map(dfs_training, 
+               ~ recipe(condition ~ 1 + ., data = .x) %>%
+                    update_role(id, trail, new_role = 'id') %>%
+                    step_normalize(all_numeric())
+) 
+
+```
+
+## Fitting (training) the models
+
+### Creating the models
 ```{r}
 prior_b <- normal(location = c(rep(0, 10)), scale = c(rep(0.3, 10)))
 prior_intercept <- normal(0, 1)
@@ -180,17 +171,9 @@ model <- logistic_reg() %>%
              prior = prior_b,
              prior_intercept = prior_intercept,
              cores = 3)
-#priors!!!
 ```
-
-## Preprocessing the data
+### Workflows
 ```{r}
-recipes <- map(dfs_training, 
-               ~ recipe(condition ~ 1 + ., data = .x) %>%
-                    update_role(id, trail, new_role = 'id') %>%
-                    step_normalize(all_numeric())
-)
-
 wflows <- map(recipes,
               ~  workflow() %>% 
                   add_model(model) %>%  
@@ -205,8 +188,7 @@ prior_wflows <- map(recipes,
 
  
 ```
-
-## Fitting (training) the models
+### Model fitting
 ```{r}
 
 prior_models <- list(prior_wflows[[1]] %>% fit(dfs_training[[1]]),
@@ -219,13 +201,38 @@ fitted <- list(wflows[[1]] %>% fit(dfs_training[[1]]),
                )
 names(fitted) <- c('Informed', 'Sceptic')
 
+
 fitted_models <- fitted %>% map(extract_fit_engine)
 
 rm(prior_wflows)
 ```
+### Convergance checks
+```{r}
 
+convergance_plots <- map2(
+  fitted_models, 
+  names(fitted_models), 
+  function(.x, .y){
+    list(
+      plot(.x, 'trace'),
+      plot(.x, 'neff'),
+      plot(.x, 'rhat')
+      ) %>%
+    map(function(.x){.x + ggtitle(.y)})
+  }
+)
 
+convergance_plots %>% print
 
+rm(convergance_plots)
+```
+### Checking the priors
+#### Visualising the prior distributions
+```{r}
+#make prior visualisation like the one on the slides (week 10)
+```
+
+#### Prior-posterior update checks
 ```{r}
 pp_update_plot <- function(prior_model, posterior_model){
   df_draws <- 
@@ -275,72 +282,53 @@ pp_update_plot(prior_models[[2]], fitted_models[[2]])+
 
 ```
 
+## Visualising the model
+```{r}
+#add a plot of the regression line on the log-odds scale and on the probability scale
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+```
 
 ## Accessing model performance
 
-### LOOIC #not sure if that's necessary
-
 ### Cross-validation
 ```{r}
-folds <- map(dfs_training, ~ vfold_cv(.x, v = 8))
+dfs_folded <- map(dfs_training, ~ vfold_cv(.x, v = 8))
 
 
 
-cv_data <- map2(wflows, folds, ~ fit_resamples(.x, .y))
+cv_data <- map2(wflows, dfs_folded, ~ fit_resamples(.x, .y, metrics = metric_set(f_meas, roc_auc)))
 
 cv_results <- map(cv_data, ~ collect_metrics(.x) %>% 
-                    mutate(model = names(.x) %>% list,
-                           upper = mean + std_err,
+                    mutate(upper = mean + std_err,
                            lower = mean - std_err))
+
+cv_results <- bind_rows(
+    cv_results[[1]] %>% mutate(model = 'Informed'),
+    cv_results[[2]] %>% mutate(model = 'Sceptic')
+  )
+
+cv_results <- cv_results %>% 
+  rename_with(.cols = everything(), ~ str_remove(.x, stringr::fixed("."))) %>% 
+  mutate(metric = if_else(metric == 'f_meas', 'f1', metric))
 ```
 
 
 ```{r}
-bind_rows(
-    cv_results[[1]] %>% mutate(model = 'informed'),
-    cv_results[[2]] %>% mutate(model = 'sceptic')
-  ) %>% 
+cv_results%>% 
   ggplot(aes(x = mean, y = model, xmax = upper, xmin = lower, colour = model)) +
     geom_pointrange()+
-    facet_wrap(vars(.metric)) +
+    facet_wrap(vars(metric)) +
     geom_vline(xintercept = 0.5, colour = 'darkred', linetype = 'dashed', alpha = 0.7) +
-    theme_minimal()
+    theme_minimal() +
+    coord_flip()
 ```
 
 
 ### Test data
 ```{r}
+
 test_preds <- map2(fitted, dfs_training, ~ augment(.x, .y))
 
 
@@ -357,31 +345,34 @@ map2(test_preds, names(test_preds),
 ```{r}
 #without uncertanity
 
-test_results <- map2_df(test_preds, names(test_preds),
+
+# come up with a better name for this one
+test_results_mean_only <- map2_df(test_preds, names(test_preds),
              ~ bind_rows(
                   .x %>% roc_auc(truth = condition, .pred_sz),
-                  .x %>% accuracy(truth = condition, .pred_class)
+                  .x %>% f_meas(truth = condition, .pred_class, beta = 1) %>% mutate(.metric = 'f1')
              ) %>% 
                mutate(Model = .y)
 )
 
 
-test_results %>% 
-  ggplot(aes(x = Model, y = .estimate, fill = Model)) +
-    geom_bar(stat = 'identity') +
+
+
+
+
+test_results_mean_only %>% 
+  ggplot(aes(x = Model, y = .estimate, colour = Model)) +
+    geom_point()+
     facet_wrap(vars(.metric)) +
-    labs(y = NULL) +
+    geom_hline(yintercept = 0.5, colour = 'darkred', linetype = 'dashed', alpha = 0.7) +
     theme_minimal()
 
 ```
-
-
-
 ```{r}
 #with the uncertanity 
 
 test_results <- tibble(draw = NULL,
-                       accuracy = NULL,
+                       f1 = NULL,
                        model = NULL)
 
 
@@ -392,124 +383,510 @@ for (i in seq_along(fitted_models)){
   
   draws_matrix <- posterior_epred(m)
   
-  preds <- map(
-    .x = draws_matrix %>% split(row(draws_matrix)), 
-    .f = ~ if_else(.x > 0.5, 'hc', 'sz') %>% as_factor %>% relevel('sz')
+  roc_aucs <- map_dbl(
+    draws_matrix %>% split(row(draws_matrix)),
+    ~ roc_auc_vec(truth = dfs_training[[1]]$condition, estimate = .x)
+    )
+  
+  roc_aucs <- tibble(
+    value = roc_aucs,
+    metric = 'roc_auc',
+    draw = seq_along(nrow)
+    )
+  
+  
+  preds_class <- map(
+    draws_matrix %>% split(row(draws_matrix)), 
+    ~ if_else(.x < 0.5, 'sz', 'hc') %>% as_factor %>% relevel('sz')
     )
   
        
-  accuracies <- map(preds,
-                    ~ accuracy(dfs_training[[1]], truth = condition, estimate = .x) %>% 
-                      pull(.estimate)
-                    )
+  fs <- map_dbl(
+    preds_class,
+    ~ f_meas_vec(truth = dfs_training[[1]]$condition, estimate = .x, beta = 1)
+    )
   
+  fs <- tibble(
+    value = fs,
+    metric = 'f1',
+    draw = seq_along(nrow)
+    )
 
-  d <- tibble(draws = seq(length(preds)),
-              accuracy = accuracies, 
-              model = name) %>% 
-    unnest(accuracy)
-    
+  
   test_results <- bind_rows(
     test_results,
-    d
+    bind_rows(fs, roc_aucs) %>% mutate(model = name)
   )
 }
-rm(i, m, name, accuracies, d)
+rm(i, m, name, draws_matrix, roc_aucs, preds_class, fs)
 
 
+test_results <- test_results %>%
+  mutate(value = if_else(metric == 'roc_auc', 1 - value, value))
 
 test_results_summary <- test_results %>% 
-  group_by(model) %>% 
-  summarise(mean = mean(accuracy), se = sd(accuracy),
+  group_by(model, metric) %>% 
+  summarise(mean = mean(value), std_err = sd(value),
             #because we're dealing the the estimates of the population parameters, the sd already is the standard error (or at least so my limited understanding goes)
-            lower = mean - 1.96*se, 
-            upper = mean + 1.96*se)
+            lower = mean - 1.96*std_err, 
+            upper = mean + 1.96*std_err)
+```
 
 
-
-#try to do this for the cross_validation as well
+```{r}
 test_results %>%
-    ggplot(aes(x = model, y = accuracy, colour = model)) +
+    ggplot(aes(x = model, y = value, colour = model)) +
       geom_point(alpha = 0.7) +
-      geom_hline(aes(yintercept = 0.5), color = 'darkred', linetype = 'dashed', alpha = 0.7) +
-      theme_minimal()
-   
-test_results_summary %>%
-    ggplot(aes(x = model, y = mean, ymin = lower, ymax = upper, colour = model)) +
-      geom_pointrange() +
-      geom_hline(aes(yintercept = 0.5), color = 'darkred', linetype = 'dashed', alpha = 0.7) +
-      labs(y = 'Accuracy') +
-      theme_minimal()
+      geom_hline(yintercept = 0.5, color = 'darkred', linetype = 'dashed', alpha = 0.7) +
+      theme_minimal() +
+      facet_wrap(vars(metric))
+```
+
+
+```{r}
+
+# Just realised this might actually be dumb
+
+  # 1. mean accuracy of all draws is something very different from the accuracy of the mean linear predictor
+  
+  #2. Second problem is that the confidence intervals in cross-validation and test might not show the same thing - the cross   validation one shows sd of the mean accuracy for each fold divided by sqrt(number of folds) while the test shows the standard diviation of the draws themselves (you checked that and the se calculated like that and the one the functions spits out are exactly the same)
+  
+        # What to do about it?
+          # - plot only the accuracies only for the mean + ci of final model estimates?
+          # - should I just back out of the confidence intervals and do the dots like he did
+                # - you then have to code the cross-validation 'by hand'
+
+
+performance_data <- bind_rows(
+  test_results_summary %>% mutate(type = 'test'),
+  cv_results %>% mutate(type = 'cross-validation')) %>% 
+  ungroup
+
+performance_data <- performance_data %>% 
+  mutate(across(where(is.character), as_factor))
+
+glimpse(performance_data)
+
+
+performance_data %>% 
+    ggplot(aes(x = mean, y = model, xmin = lower, xmax = upper, colour = type)) +
+      geom_pointrange(position = position_dodge(width = 0.5)) +
+      geom_vline(aes(xintercept = 0.5), color = 'darkred', linetype = 'dashed', alpha = 0.7) +
+      labs(y = 'F1') +
+      theme_minimal()+
+      coord_flip() +
+      facet_wrap(vars(metric))
+
+```
+## Feature importance
+```{r}
+vip_simulated <- function(model, truth){
+vim_df <- model %>% gather_draws(`v_.*`, regex = T)
+vim_df <- map2_df(vim_df %>% group_split(.variable), truth,
+                  ~ .x %>% mutate(truth = .y)
+                  )
+
+vim_df %>% 
+ggplot(aes(x = .value)) +
+  geom_density() +
+  geom_vline(aes(xintercept = truth[[1]]), color = 'darkred', linetype = 'dashed', alpha = 0.8) +
+  facet_wrap(vars(.variable), nrow = , scales = 'free_x') +
+  theme_minimal()
+}
+
+vip_simulated(fitted_models[[1]], informed_pop_effects) + ggtitle('Informed')
+vip_simulated(fitted_models[[2]], skeptic_pop_effects) + ggtitle('Skeptic')
+
+#how to make v_10 appear as last? (mutating to factor before ggplot and inside facet_wrap doesn't work)
 
 ```
 
 
+```{r}
+vips <- map(
+  c(1,2),
+  ~ explain_tidymodels(
+      fitted[[.x]] %>% extract_fit_parsnip,
+      data = dfs_training[[.x]],
+      y = dfs_training[[.x]]$condition %>% as.numeric - 1,
+      label = names(fitted)[[.x]]
+      )
+)
+
+map(
+  vips, 
+  ~ .x %>% 
+    model_parts %>% 
+    plot(show_boxplots = F) +
+      labs(title = 'Feature importance',
+         subtitle = NULL)
+)
+
+map(
+  vips, 
+  ~ .x %>% 
+    model_profile(
+      type = 'partial',
+      variables = paste0('v_', seq(10))
+      ) %>% 
+    plot() +
+      labs(title = 'Partial dependence profile')
+)
+```
 
 
+```{r}
+save.image(file = "/rdata/a3_part2.Rdata")
+```
+---
+title: "a3_part3"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library('pacman')
+pacman::p_load(tidyverse, tidymodels, multilevelmod, rstanarm, tidybayes, broom.mixed, tidytext)
+```
+# Part III
+
+Download the empirical dataset from brightspace and apply your ML pipeline to the new data, adjusting where needed. Warning: in the simulated dataset we only had 10 features, now you have many more! Such is the life of the ML practitioner. Consider the impact a higher number of features will have on your ML inference, and decide whether you need to cut down the number of features before running the pipeline (or alternatively expand the pipeline to add feature selection).
+```{r}
+rm(list = ls()) 
+# removing all objects from the global environment
+```
+      
+```{r}
+data_raw <- read_csv('real_data.csv')
+
+glimpse(data_raw)
+```
+
+```{r}
+data <- data_raw %>%
+  rename_with(.cols = everything(), str_to_lower) %>% 
+  rename(id = patid,
+         condition = diagnosis) %>% 
+  mutate(across(where(is.character), str_to_lower),
+         across(1:7, as_factor),
+         condition = if_else(condition != 'ct', 'sz', 'hc') %>% as_factor %>% relevel('sz')) %>% 
+  select(-newid)
+
+data$language %>% summary
+data$corpus %>% summary
+
+data <- data %>% 
+  select(-language)
 
 
+head(data)
+```
+## Describing the data
+### Condition
+```{r}
+data %>% 
+  count(condition) %>% 
+  mutate(pct = n / sum(n), pct = pct %>% round(2))
+```
+
+### Gender
+```{r}
+data %>% 
+  count(gender) %>% 
+  mutate(pct = n / sum(n), pct = pct %>% round(2))
+
+# pct should have grouped n in the denominator
+data %>% 
+  count(gender, condition) %>% 
+  group_by(condition) %>% 
+  mutate(pct = n / sum(n), pct = pct %>% round(2))
+```
+```{r}
+data %>% 
+  count(corpus) %>% 
+  mutate(pct = n / sum(n), pct = pct %>% round(2))
 
 
+data %>% 
+  count(condition, corpus) %>% 
+  group_by(condition) %>% 
+  mutate(pct = n / sum(n), pct = pct %>% round(2))
+```
+
+## Modeling the data
+### Budgeting
+```{r}
+data_background <- data %>% select(1:5)
+data <- data %>% select(-c(gender, corpus))
+
+split <- initial_split(data, prop = 4/5)
+
+data_training <- training(split)
+data_testing <- testing(split)
+
+rm(split)
+```
+## Preprocessing the data
+```{r}
+recipes <- list()
+
+recipes[[1]] <- recipe(condition ~ 1 + ., data = data_training) %>%
+                    update_role(id, trial, new_role = 'id') %>%
+                    step_normalize(all_numeric())
 
 
+recipes[[2]] <- recipes[[1]] %>% step_corr(all_predictors())
+recipes[[3]] <- recipes[[1]] %>% step_pca(all_predictors())
+recipes[[4]] <- recipes[[1]] %>% step_umap
+
+names(recipes) <- c('lasso', 'corr', 'pca')
 
 
+# Right now you need to do this only with corr and pca 
+recipes <- recipes[2:3]
+#remove this later
+```
+### Creating the models
+```{r}
+prior_b <- normal(location = 0, scale = 0.3)
+prior_intercept <- normal(0, 1)
 
 
+model_prior <- logistic_reg() %>% 
+  set_engine('stan',
+             prior = prior_b,
+             prior_intercept = prior_intercept,
+             prior_PD = T,
+             cores = 3)
+  
+  
+model <- logistic_reg() %>% 
+  set_engine('stan',
+             prior = prior_b,
+             prior_intercept = prior_intercept,
+             cores = 3)
+
+model_lasso <- logistic_reg(penalty = 0.01, mixture = 1) %>% 
+    set_engine('stan',
+             prior = prior_b,
+             prior_intercept = prior_intercept,
+             cores = 3)
+
+```
+### Workflows
+```{r}
+wflows <- map(recipes,
+               ~ workflow() %>% 
+                  add_model(model) %>% 
+                  add_recipe(.x))
+#un # this after you decide what to do about the lasso regression
+
+#wflows[[1]] <- workflow() %>% 
+ #   add_model(model_lasso) %>% 
+  #  add_recipe(recipes[[1]])
+```
+### Fitting the models
+```{r}
+set.seed(1)
+fitted <- map(wflows,
+              ~ .x %>% fit(data_training))
+
+fitted_models <- map(fitted, extract_fit_engine)
+
+set.seed(1)
+prior_fitted <- map(recipes,
+  ~ workflow() %>%
+     add_model(model_prior) %>%
+     add_recipe(.x) %>% 
+     fit(data_training) %>% 
+     extract_fit_engine()
+)
+
+```
+### Convergance checks
+```{r}
+
+convergance_plots <- map2(
+  fitted_models, 
+  names(fitted_models), 
+  function(.x, .y){
+    list(
+      plot(.x, 'trace', pars = '(Intercept)'),
+      #think about which estimates to include and add this here
+      plot(.x, 'neff'),
+      plot(.x, 'rhat')
+      ) %>%
+    map(function(.x){.x + ggtitle(.y)})
+  }
+)
+
+convergance_plots %>% print
+
+rm(convergance_plots)
+
+```
+```{r fig.width= 12, fig.height = 10}
+
+tidy_pca <- tidy(fitted[[2]] %>% extract_recipe, 2)
+
+tidy_pca %>%
+  filter(component %in% paste0('PC', 1:5)) %>% 
+  group_by(component) %>%
+  top_n(15, abs(value)) %>%
+  ungroup() %>%
+  mutate(terms = reorder_within(terms, abs(value), component)) %>%
+  ggplot(aes(value, terms)) +
+  geom_col() +
+  facet_wrap(~component, scale = 'free_y') +
+  scale_y_reordered() +
+  theme_minimal()
 
 
-
-
-
-
-
-
-
-
-
+ggsave('pca_interpretation.png', height = 10, width = 12, bg = 'white')
+```
 
 
 
 
 ```{r}
-matrix <- posterior_epred(fitted_models[[1]])
 
-tibble <- posterior_epred(fitted_models[[1]]) %>% 
-  as_tibble
+variables_corr <- get_variables(fitted_models[[1]]) %>%
+    str_subset('.*__', negate = T) %>%
+      #removing all the 'technical' variables (e.g. 'treedepth__', 'stepsize__')
+    str_subset('(Intercept)', negate = T) 
 
-
-# do it just for the informed one:
-results <- tibble(seq(1, 4000, by = 1)
-  
-for (i in seq(1, 4000, by = 1)){
-  pred_class <- posterior_epred(fitted_model[[1]])[i, ] %>% if_else(.x > 0.5, 'sz', 'hc')
-  
-  accuracy <- accuracy(truth_training$condition, estimate = pred_condition)
-  }
-  
-
-
-
-
-
-map(if_else(.x > 0.5, 'sz', 'hc')
-  accuracy(truth = dfs_training$conditon, estimate = pred_condition)
+variables_corr <- c(
+  '(Intercept)',
+  variables_corr %>% str_subset('mcep.*') %>% sample(3, replace = F),
+  variables_corr %>% str_subset('hmpdm.*') %>% sample(3, replace = F),
+  variables_corr %>% str_subset(.,'mcep.*|hmpd.*', negate = T) %>% sample(3, replace = F)
 )
-  
-#add different fill for test and cross-validation  
-  
- results %>% 
-   group_by(draw) %>% 
-      ggplot(aes(x = model, y = accuracy, fill = method, yintercept = 0.5)) +
-        geom_point(alpha = 0.7) +
-        geom_hline(color = 'darkred') +
-        theme_minimal()
-   
-)
+#drawing different variables from different types of measures to plot as a sample in the pior-posterior update plots 
+
+variables_pca <- get_variables(fitted_models[[2]]) %>% str_subset('.*__', negate = T)
 ```
 
-# Part III
 
-Download the empirical dataset from brightspace and apply your ML pipeline to the new data, adjusting where needed. Warning: in the simulated dataset we only had 10 features, now you have many more! Such is the life of the ML practitioner. Consider the impact a higher number of features will have on your ML inference, and decide whether you need to cut down the number of features before running the pipeline (or alternatively expand the pipeline to add feature selection).
+```{r}
+pp_update_plot <- function(prior_model, posterior_model, variables){
+  
+  df_draws <-  bind_rows(
+    prior_model %>% gather_draws(!!!syms(variables))%>% 
+        mutate(type = 'prior'),
+      
+      posterior_model %>% gather_draws(!!!syms(variables))%>% 
+        mutate(type = 'posterior')
+      )
+  
+  df_draws <- df_draws %>% 
+    group_by(.variable) %>% 
+    mutate(upp_lim = if_else((max(.value) + min(.value)) > 0, max(.value), - min(.value)),
+           low_lim = - upp_lim) %>% 
+    ungroup
+  
+  
+  
+  df_draws %>%  
+    ggplot(aes(x = .value, fill = type)) +
+      geom_density(alpha = 0.7) +
+      labs(fill = element_blank()) +
+      xlim(df_draws$low_lim[[1]], df_draws$upp_lim[[1]]) +
+      facet_grid(vars(df_draws$.variable)) +
+      theme_minimal() +
+      theme(axis.ticks.y = element_blank(), 
+            axis.text.y = element_blank())
+}
+```
+```{r fig.height=8}
+pp_update_plot(prior_fitted[[1]], fitted_models[[1]], variables_corr)
+
+ggsave('pp_upadte_corr.png', height = 8, bg = 'white')
+
+pp_update_plot(prior_fitted[[2]], fitted_models[[2]], variables_pca)
+
+ggsave('pp_update_pca.png', height = 8, bg = 'white')
+
+# they look quite weird, check whether the values of the priors and posteriors much the priors you set and the models estimates (or check by running brms) :c
+```
 
 
+```{r}
+test_preds <- map(fitted, ~ augment(.x, data_training))
+
+rocs <- map2(test_preds, names(test_preds),
+     ~ .x %>% 
+          roc_curve(truth = condition, .pred_sz) %>% 
+            autoplot + 
+            ggtitle(.y)
+)
+ggsave(plot = rocs[[1]], filename = 'roc_corr.png')
+ggsave(plot = rocs[[2]], filename =  'roc_pca.png')
+#why this one and part 2 calculate the probability for different classes??? part 2 (for sz and this one for hc)
+```
+```{r}
+#with the uncertanity 
+
+test_results <- tibble(draw = NULL,
+                       f1 = NULL,
+                       model = NULL)
+
+
+for (i in seq_along(fitted_models)){
+  
+  m <- fitted_models[[i]]
+  name <- names(fitted_models)[[i]]
+  
+  draws_matrix <- posterior_epred(m)
+  
+  roc_aucs <- map_dbl(
+    draws_matrix %>% split(row(draws_matrix)),
+    ~ roc_auc_vec(truth = data_training$condition, estimate = .x)
+    )
+  roc_aucs <- tibble(
+    value = roc_aucs,
+    metric = 'roc_auc',
+    draw = seq_along(nrow)
+    )
+  
+  
+  preds_class <- map(
+    draws_matrix %>% split(row(draws_matrix)), 
+    ~ if_else(.x < 0.5, 'sz', 'hc') %>% as_factor %>% relevel('sz')
+    )
+  
+       
+  fs <- map_dbl(
+    preds_class,
+    ~ f_meas_vec(truth = data_training$condition, estimate = .x)
+    )
+  fs <- tibble(
+    value = fs,
+    metric = 'f1',
+    draw = seq_along(nrow)
+    )
+
+  
+  test_results <- bind_rows(
+    test_results,
+    bind_rows(fs, roc_aucs) %>% mutate(model = name)
+  )
+}
+rm(i, m, name, draws_matrix, roc_aucs, preds_class, fs)
+
+
+test_results <- test_results %>%
+  mutate(value = if_else(metric == 'roc_auc', 1 - value, value))
+
+test_results %>%
+    ggplot(aes(x = model, y = value, colour = model)) +
+      geom_point(alpha = 0.7) +
+      geom_hline(yintercept = 0.5, color = 'darkred', linetype = 'dashed', alpha = 0.7) +
+      theme_minimal() +
+      facet_wrap(vars(metric))
+
+ggsave('test_results.png', bg = 'white')
+```
+```{r}
+save.image(file = "/rdata/a3_part3.Rdata")
+```
