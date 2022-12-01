@@ -432,7 +432,7 @@ test_results %>%
 
 ```{r}
 
-# Just realised this might actually be dumb
+# Just realised this might actually not work
 
   # 1. mean accuracy of all draws is something very different from the accuracy of the mean linear predictor
   
@@ -440,7 +440,7 @@ test_results %>%
   
         # What to do about it?
           # - plot only the accuracies only for the mean + ci of final model estimates?
-          # - should I just back out of the confidence intervals and do the dots like he did
+          # - just back out of the confidence intervals and do all the dots for cross-validation as well
                 # - you then have to code the cross-validation 'by hand'
 
 
