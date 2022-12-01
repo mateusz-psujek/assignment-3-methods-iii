@@ -523,7 +523,7 @@ map(
 
 
 ```{r}
-save.image(file = "/rdata/a3_part2.Rdata")
+#save.image(file = "/rdata/a3_part2.Rdata")
 ```
 # Part III
 
@@ -719,7 +719,7 @@ tidy_pca %>%
   theme_minimal()
 
 
-ggsave('pca_interpretation.png', height = 10, width = 12, bg = 'white')
+#ggsave('pca_interpretation.png', height = 10, width = 12, bg = 'white')
 ```
 
 
@@ -777,13 +777,12 @@ pp_update_plot <- function(prior_model, posterior_model, variables){
 ```{r fig.height=8}
 pp_update_plot(prior_fitted[[1]], fitted_models[[1]], variables_corr)
 
-ggsave('pp_upadte_corr.png', height = 8, bg = 'white')
+#ggsave('pp_upadte_corr.png', height = 8, bg = 'white')
 
 pp_update_plot(prior_fitted[[2]], fitted_models[[2]], variables_pca)
 
-ggsave('pp_update_pca.png', height = 8, bg = 'white')
+#ggsave('pp_update_pca.png', height = 8, bg = 'white')
 
-# they look quite weird, check whether the values of the priors and posteriors much the priors you set and the models estimates (or check by running brms) :c
 ```
 
 
@@ -796,9 +795,9 @@ rocs <- map2(test_preds, names(test_preds),
             autoplot + 
             ggtitle(.y)
 )
-ggsave(plot = rocs[[1]], filename = 'roc_corr.png')
-ggsave(plot = rocs[[2]], filename =  'roc_pca.png')
-#why this one and part 2 calculate the probability for different classes??? part 2 (for sz and this one for hc)
+rocs
+#ggsave(plot = rocs[[1]], filename = 'roc_corr.png')
+#ggsave(plot = rocs[[2]], filename =  'roc_pca.png')
 ```
 ```{r}
 #with the uncertanity 
@@ -861,8 +860,8 @@ test_results %>%
       theme_minimal() +
       facet_wrap(vars(metric))
 
-ggsave('test_results.png', bg = 'white')
+#ggsave('test_results.png', bg = 'white')
 ```
 ```{r}
-save.image(file = "/rdata/a3_part3.Rdata")
+#save.image(file = "/rdata/a3_part3.Rdata")
 ```
