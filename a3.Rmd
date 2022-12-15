@@ -63,7 +63,7 @@ names(dfs_long) <- c('informed', 'skeptic')
 head(dfs_long[[1]])
 head(dfs_long[[2]])
 ```
-#```{r}
+```{r}
 #checking whether the simulation works fine
 
 check <- map(list(informed_pop_effects, skeptic_pop_effects), ~ simulate_data(pop_effects = .x, n = 1000))
@@ -80,13 +80,11 @@ check[[1]] %>%
   group_by(id) %>% 
   summarise(mean = measurment %>% mean, sd = measurment %>% sd) %>% 
     mutate(true_mean = true_effect)
-#```
+```
 
 
 ```{r}
 #visualising the simulated data
-
-
 map(dfs_long,
     ~ .x %>% 
       ggplot(aes(x = measurment, fill = condition)) +
@@ -106,9 +104,7 @@ dfs_wide <- map(dfs_long,
 head(dfs_wide[[1]])
 head(dfs_wide[[2]])
 ```
-```{r}
 
-```
 # Part II - machine learning pipeline on simulated data
 
 On the two simulated datasets (separately) build a machine learning pipeline: i) create a data budget (e.g. balanced training and test sets); ii) pre-process the data (e.g. scaling the features); iii) fit and assess a classification algorithm on the training data (e.g. Bayesian multilevel logistic regression); iv) assess performance on the test set; v) discuss whether performance is as expected and feature importance is as expected.
@@ -215,10 +211,6 @@ rm(convergance_plots)
 ```
 ### Checking the priors
 #### Visualising the prior distributions
-```{r}
-#make prior visualisation like the one on the slides (week 10)
-```
-
 #### Prior-posterior update checks
 ```{r}
 pp_update_plot <- function(prior_model, posterior_model){
@@ -268,15 +260,6 @@ pp_update_plot(prior_models[[2]], fitted_models[[2]])+
   ggtitle('Sceptic')
 
 ```
-
-## Visualising the model
-```{r}
-#add a plot of the regression line on the log-odds scale and on the probability scale
-
-
-
-```
-
 ## Accessing model performance
 
 ### Cross-validation
@@ -483,9 +466,6 @@ ggplot(aes(x = .value)) +
 
 vip_simulated(fitted_models[[1]], informed_pop_effects) + ggtitle('Informed')
 vip_simulated(fitted_models[[2]], skeptic_pop_effects) + ggtitle('Skeptic')
-
-#how to make v_10 appear as last? (mutating to factor before ggplot and inside facet_wrap doesn't work)
-
 ```
 
 
@@ -523,7 +503,7 @@ map(
 
 
 ```{r}
-#save.image(file = "/rdata/a3_part2.Rdata")
+save.image(file = "/rdata/a3_part2.Rdata")
 ```
 # Part III
 
@@ -572,7 +552,6 @@ data %>%
   count(gender) %>% 
   mutate(pct = n / sum(n), pct = pct %>% round(2))
 
-# pct should have grouped n in the denominator
 data %>% 
   count(gender, condition) %>% 
   group_by(condition) %>% 
@@ -607,20 +586,16 @@ rm(split)
 ```{r}
 recipes <- list()
 
-recipes[[1]] <- recipe(condition ~ 1 + ., data = data_training) %>%
+base <- recipe(condition ~ 1 + ., data = data_training) %>%
                     update_role(id, trial, new_role = 'id') %>%
                     step_normalize(all_numeric())
 
 
-recipes[[2]] <- recipes[[1]] %>% step_corr(all_predictors())
-recipes[[3]] <- recipes[[1]] %>% step_pca(all_predictors())
+recipes[[1]] <- base %>% step_corr(all_predictors())
+recipes[[2]] <- base %>% step_pca(all_predictors())
 
-names(recipes) <- c('lasso', 'corr', 'pca')
+names(recipes) <- c('corr', 'pca')
 
-
-# Right now you need to do this only with corr and pca 
-recipes <- recipes[2:3]
-#remove this later
 ```
 ### Creating the models
 ```{r}
@@ -641,13 +616,6 @@ model <- logistic_reg() %>%
              prior = prior_b,
              prior_intercept = prior_intercept,
              cores = 3)
-
-model_lasso <- logistic_reg(penalty = 0.01, mixture = 1) %>% 
-    set_engine('stan',
-             prior = prior_b,
-             prior_intercept = prior_intercept,
-             cores = 3)
-
 ```
 ### Workflows
 ```{r}
@@ -655,11 +623,6 @@ wflows <- map(recipes,
                ~ workflow() %>% 
                   add_model(model) %>% 
                   add_recipe(.x))
-#un # this after you decide what to do about the lasso regression
-
-#wflows[[1]] <- workflow() %>% 
- #   add_model(model_lasso) %>% 
-  #  add_recipe(recipes[[1]])
 ```
 ### Fitting the models
 ```{r}
@@ -862,5 +825,5 @@ test_results %>%
 #ggsave('test_results.png', bg = 'white')
 ```
 ```{r}
-#save.image(file = "/rdata/a3_part3.Rdata")
+save.image(file = "/rdata/a3_part3.Rdata")
 ```
